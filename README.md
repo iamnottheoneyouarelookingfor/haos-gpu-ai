@@ -5,7 +5,7 @@
 **A from-scratch, tri-vendor GPU-accelerated fork of Home Assistant OS — run local LLMs on bare-metal GPU speed, inside a Home Assistant add-on.**
 
 [![Platform](https://img.shields.io/badge/platform-x86__64%20bare--metal-blue)](#)
-[![HAOS](https://img.shields.io/badge/HAOS-17.3%20(kernel%206.12)-41BDF5)](#)
+[![HAOS](https://img.shields.io/badge/HAOS-18.3%20target%20(kernel%206.18)-41BDF5)](#)
 [![GPUs](https://img.shields.io/badge/GPU-NVIDIA%20%2B%20Intel%20%2B%20AMD-76B900)](#)
 [![OTA](https://img.shields.io/badge/OTA-CA--signed%20%2F%20decoupled-success)](#)
 [![Status](https://img.shields.io/badge/status-hardware--proven-brightgreen)](#)
@@ -239,9 +239,11 @@ the top). The following were the hard problems along the way — all resolved in
 this repo, but worth knowing if you re-pin to a different HAOS/kernel version,
 because they're where version drift bites:
 
-- **NVIDIA driver ↔ kernel pairing** — pinned to **595.84** for kernel **6.12.85**
-  (open modules, Turing+/Ada; covers the RTX 4090). A newer kernel needs a newer
-  driver + CUDA pairing.
+- **NVIDIA driver ↔ kernel pairing** — **595.84** (open modules, Turing+/Ada;
+  covers the RTX 4090). Fully proven on kernel **6.12.85** (HAOS 17.3); the repo
+  now **targets HAOS 18.3 / kernel 6.18.52**, which 595.84 also covers — but the
+  18.3 open-module build is pending its first green build + flash. A newer kernel
+  line needs its driver pairing re-validated.
 - **GSP firmware path** — the open modules require `gsp_ga10x.bin` under
   `/usr/lib/firmware/nvidia/<ver>/` (merged-usr path — *not* `/lib/firmware`).
 - **NVIDIA Container Toolkit** ships as a `.deb` (extracted via `dpkg-deb`); its
@@ -257,8 +259,9 @@ because they're where version drift bites:
 - **A/B boot-good** — a `rauc-mark-good` service resets the grub try-counter each
   boot so a networkless/slow first boot can't strand the box in the rescue shell.
 - **OTA decoupling** — the custom `compatible` string is applied at every
-  `hassos_rauc_compatible` call site, and the RAUC keyring is baked from **your**
-  CA so stock bundles are rejected before install.
+  `haos_rauc_compatible` call site (HAOS 18.x renamed it from
+  `hassos_rauc_compatible`; `build.sh` matches both), and the RAUC keyring is
+  baked from **your** CA so stock bundles are rejected before install.
 - **`CONFIG_DRM_XE`** depends on the pinned kernel; drop the two `DRM_XE` lines
   from `external/kernel/gpu-ai.config` if a build reports it unknown (i915 still
   provides `/dev/dri`).

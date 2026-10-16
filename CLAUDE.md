@@ -62,10 +62,42 @@ Device-verified anchor paths used by the gates/rebuild:
 | Area | State |
 |------|-------|
 | Running image | **HAOS 17.3-gpu-ai-universal**, Core 2026.7.1, on the 4090 PC — version-suffix decoupling working |
-| Kernel | **6.12.85** (pinned to 17.3). **18.1 / kernel 6.18.37 currently 404s on the kernel.org CDN** — do not try to auto-build 18.1 until that clears |
+| Kernel | Running: **6.12.85** (HAOS 17.3). Repo now **targets HAOS 18.3 / kernel 6.18.52** (`TRACK_LINE` bumped to `18.`); applied in-tree but **not yet built or flashed** — see "18.x bump status" below |
 | GPU host stack | NVIDIA **595.84** open modules, GSP firmware, autodetect, baked `default-runtime: nvidia`, toolkit **1.19** host-ldconfig injection — all validated live |
 | Add-on in container | 4090 = CUDA compute 8.9, 23.5 GiB; flash attention on; `q8_0` KV cache; 31/31 layers offloaded |
 | PTX-JIT | **restore validated live (2026-10-16)**: the `cuda_v13` runner completes gemma inference at ~93 tok/s, `POST /v1/chat/completions → 200`, **no `CUDA error 221`** — the handoff's remaining OS task is closed |
+
+---
+
+## 18.x bump status (2026-10-16 — applied in-tree, NOT yet device-verified)
+
+Bumping 17.3 → **18.3 (kernel 6.18.52)**. This was the gated "deliberate,
+re-validated major bump." What the re-validation found and what was done:
+
+- **HassOS → HAOS rename** is the real work of this bump. HAOS 18.x renamed
+  things our overlay/patches keyed off. Fixed, matching BOTH names so a forced
+  17.x build still works:
+  - `build.sh` compatible patch: `hassos_rauc_compatible` → also `haos_rauc_compatible`
+    (verified it rewrites 18.3's `rauc.sh` + `hdd-image.sh` call sites; skips the
+    `name.sh` definition).
+  - `build.sh` keyring patch: `BR2_EXTERNAL_HASSOS_PATH` → also `BR2_EXTERNAL_HAOS_PATH`.
+  - `seed-local-addons.service`: ordered after/before `hassos-*` → also `haos-data`
+    / `haos-supervisor` units.
+- **Unchanged anchors (still match at 18.3):** `SYSTEM_SIZE=256M` in `hdd-image.sh`
+  (still bumped to 512M), and the `create-data-partition.sh` docker-preload block.
+- **Submodule** `upstream` gitlink bumped to 18.3 (`0502381a`); `TRACK_LINE` → `18.`.
+- **Driver:** 595.84 is kept — it covers the 6.18 line (preflight matrix ceiling 6.20).
+
+**NOT verified from here (must pass before trusting):**
+1. **Kernel 6.18.52 + 595.84 `.run` reachability** — this session's proxy 403-blocks
+   kernel.org and nvidia.com, so run `preflight-check.sh` in CI/on the build box.
+   (The old "18.1 404" note was about kernel 6.18.37; 18.3 uses 6.18.52.)
+2. **595.84 open-module compile against 6.18.52** — the single biggest risk of the
+   bump; proven only by a green `nvidia-amd` build, not by the matrix heuristic.
+3. **Boot + gemma inference on the flashed 18.3 image** — the real end-to-end proof.
+
+Converge `intel-amd` → `nvidia-amd` → `all`. Until a green build + flash, the
+running device stays 17.3 and this section stays "not verified."
 
 ---
 
@@ -202,7 +234,7 @@ completes.
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| HAOS | 17.3 | kernel 6.12.85; 18.1 (6.18.37) currently 404s on the kernel.org CDN |
+| HAOS | 18.3 (target) | kernel 6.18.52; building, not yet device-verified. Last fully proven: 17.3 (kernel 6.12.85) |
 | HA Core | 2026.7.1 | running image |
 | NVIDIA driver | 595.84 | open modules; Turing+/Ada; covers 6.12→6.18/6.19 |
 | nvidia-container-toolkit | 1.19 | host-ldconfig bind-mount injection |
@@ -237,4 +269,6 @@ Code is buildable on the 17.3 line as-is. To publish signed OTA releases:
    `profile=nvidia-amd` and `force_tag=<HAOS_TAG>`; iterate to green, then `all`.
 3. **Runner size:** a full HAOS build is disk/time heavy — prefer a larger or
    self-hosted runner.
-4. **Don't auto-build 18.1** until its kernel tarball stops 404ing.
+4. **Now tracking the 18.x line** (`TRACK_LINE="18."`, target 18.3 / kernel
+   6.18.52). First 18.3 build should be a manual `force_tag=18.3`, profile
+   `nvidia-amd` first, then `all`. The next guarded boundary is 18.x → 19.x.

@@ -1,8 +1,11 @@
 [Unit]
 Description=Seed bundled local add-ons onto the Supervisor data partition
 RequiresMountsFor=/mnt/data
-After=mnt-data.mount hassos-data.service
-Before=hassos-supervisor.service
+# HAOS 18.x renamed the data/supervisor units hassos-* -> haos-*. Both names are
+# listed so the ordering holds on 17.x and 18.x; systemd ignores an ordering dep
+# on a unit that does not exist, so the stale name is harmless.
+After=mnt-data.mount hassos-data.service haos-data.service
+Before=hassos-supervisor.service haos-supervisor.service
 ConditionPathExists=/usr/bin/seed-local-addons.sh
 
 [Service]

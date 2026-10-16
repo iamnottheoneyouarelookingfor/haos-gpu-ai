@@ -29,7 +29,7 @@ git -C upstream submodule update --init --recursive
 ### 2. Pin the HAOS release you want to build
 Pick a tag from https://github.com/home-assistant/operating-system/releases.
 ```bash
-HAOS_TAG=14.2                         # example — use a real current tag
+HAOS_TAG=18.3                         # the current target line (kernel 6.18.52)
 git -C upstream fetch --tags
 git -C upstream checkout "tags/${HAOS_TAG}"
 git -C upstream submodule update --init --recursive   # buildroot is nested
@@ -42,10 +42,10 @@ grep BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE \
 ```
 The pinned NVIDIA driver must support that kernel. Reference points (verify on
 NVIDIA's Unix driver page): 550 tops out ~6.11; 580.126.18 fixes the 6.19
-module build; 595.84 is the current Production Branch. **The device-verified
-build is HAOS 17.3 (kernel 6.12.85), and the pin is 595.84** (already the
-default; it also covers the 6.18.37 kernel of a future 18.1 bump, which is
-currently blocked because that kernel tarball 404s on the kernel.org CDN).
+module build; 595.84 is the current Production Branch. **The repo targets HAOS
+18.3 (kernel 6.18.52), and the pin is 595.84** (already the default; it covers
+the 6.18 line). The last fully hardware-proven line was 17.3 (kernel 6.12.85);
+the 18.3 open-module build is validated by the preflight gate + a green build.
 Only change the pin if your kernel differs:
 ```
 # external/package/haos-compute-nvidia/Config.in
@@ -212,8 +212,8 @@ Buildroot can't reliably fetch the kernel or the NVIDIA `.run` in a sandboxed
 builder. Seed them into `dl/` from the **host** (which has network) before building:
 ```bash
 mkdir -p dl/linux dl/linux-headers dl/cmake
-curl -fL -o dl/linux/linux-6.12.85.tar.xz https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.85.tar.xz
-cp dl/linux/linux-6.12.85.tar.xz dl/linux-headers/
+curl -fL -o dl/linux/linux-6.18.52.tar.xz https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.52.tar.xz
+cp dl/linux/linux-6.18.52.tar.xz dl/linux-headers/
 curl -fL -o dl/NVIDIA-Linux-x86_64-595.84.run https://us.download.nvidia.com/XFree86/Linux-x86_64/595.84/NVIDIA-Linux-x86_64-595.84.run
 ```
 
