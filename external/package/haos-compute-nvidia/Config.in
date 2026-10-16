@@ -39,9 +39,11 @@ config BR2_PACKAGE_HAOS_COMPUTE_NVIDIA_VERSION
 	    535 -> up to ~6.5    550 -> up to ~6.11
 	    580.126.18 fixes the kernel 6.19 module build
 	    595.84 = current Production Branch (covers 6.12 through 6.18/6.19-era kernels)
-	  The device-verified running image is HAOS 17.3 (kernel 6.12.85), and 595.84
-	  builds its open modules cleanly. A future bump to 18.1 (kernel 6.18.37) is
-	  blocked for now (that kernel tarball currently 404s on the kernel.org CDN);
-	  595.84 already covers it, so no driver change is needed when that unblocks.
+	  The repo now targets HAOS 18.3 (kernel 6.18.52); 595.84 covers the 6.18 line,
+	  so no driver change is needed for the bump. The last line fully hardware-
+	  proven was 17.3 (kernel 6.12.85, where 595.84 built and ran on the RTX 4090);
+	  the 18.3 open-module build against 6.18.52 is NOT yet device-verified - the CI
+	  preflight gate checks the kernel<->driver pairing and asset reachability, and
+	  the actual open-module compile is proven only by a green build + flash.
 
 endif

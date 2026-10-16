@@ -67,17 +67,19 @@ fi
 
 # 2. DELIVERABLE E (a): custom RAUC `compatible` string.
 #    HARDWARE-PROVEN FACT: exporting ota_compatible does NOTHING - HAOS derives
-#    the string via the shell function hassos_rauc_compatible() at every
-#    consumer (runtime system.conf AND the bundle manifest), overwriting any
-#    env. So append our suffix at every CALL SITE in the upstream WORKING TREE
-#    (commit untouched, idempotent, reapplied each build - same pattern as the
-#    SYSTEM_SIZE bump). Result: system.conf and .raucb both carry
-#    haos-generic-x86-64-gpu-ai, and stock bundles are rejected PRE-signature.
+#    the string via a shell function at every consumer (runtime system.conf AND
+#    the bundle manifest), overwriting any env. HAOS 18.x renamed that function
+#    hassos_rauc_compatible() -> haos_rauc_compatible() (the project-wide
+#    HassOS->HAOS rename), so we match BOTH names. Append our suffix at every
+#    CALL SITE in the upstream WORKING TREE (commit untouched, idempotent,
+#    reapplied each build - same pattern as the SYSTEM_SIZE bump). Result:
+#    system.conf and .raucb both carry haos-generic-x86-64-gpu-ai, and stock
+#    bundles are rejected PRE-signature.
 GPU_AI_COMPAT_SUFFIX="-gpu-ai"
-for f in $(grep -rl --include='*.sh' 'hassos_rauc_compatible' "${UPSTREAM}/buildroot-external" 2>/dev/null); do
-	grep -q '\$(hassos_rauc_compatible)' "$f" || continue           # callsites only, not the definition
-	grep -q "hassos_rauc_compatible)${GPU_AI_COMPAT_SUFFIX}" "$f" && continue   # idempotent
-	sed -i "s|\$(hassos_rauc_compatible)|\$(hassos_rauc_compatible)${GPU_AI_COMPAT_SUFFIX}|g" "$f"
+for f in $(grep -rlE --include='*.sh' '(hassos|haos)_rauc_compatible' "${UPSTREAM}/buildroot-external" 2>/dev/null); do
+	grep -qE '\$\((hassos|haos)_rauc_compatible\)' "$f" || continue      # callsites only, not the definition
+	grep -qE "(hassos|haos)_rauc_compatible\)${GPU_AI_COMPAT_SUFFIX}" "$f" && continue   # idempotent
+	sed -i -E "s#(\\\$\((hassos|haos)_rauc_compatible\))#\1${GPU_AI_COMPAT_SUFFIX}#g" "$f"
 	echo ">>> E: compatible suffix ${GPU_AI_COMPAT_SUFFIX} applied in ${f#${ROOT}/}"
 done
 
@@ -107,9 +109,11 @@ done
 #     anchor. To keep HAOS's default behaviour instead, delete this block.
 RAUC_SH="${UPSTREAM}/buildroot-external/scripts/rauc.sh"
 if [ -f "$RAUC_SH" ] && ! grep -q 'GPU_AI: keyring = your CA only' "$RAUC_SH"; then
+	# HAOS 18.x renamed BR2_EXTERNAL_HASSOS_PATH -> BR2_EXTERNAL_HAOS_PATH; the
+	# optional \(SS\)\{0,1\} matches the dev-/rel-ca cp line on both 17.x and 18.x.
 	sed -i \
-		-e 's|cp "${BR2_EXTERNAL_HASSOS_PATH}/ota/dev-ca.pem" "${TARGET_DIR}/etc/rauc/keyring.pem"|openssl x509 -in /build/cert.pem -text > "${TARGET_DIR}/etc/rauc/keyring.pem"  # GPU_AI: keyring = your CA only|' \
-		-e 's|cp "${BR2_EXTERNAL_HASSOS_PATH}/ota/rel-ca.pem" "${TARGET_DIR}/etc/rauc/keyring.pem"|openssl x509 -in /build/cert.pem -text > "${TARGET_DIR}/etc/rauc/keyring.pem"  # GPU_AI: keyring = your CA only|' \
+		-e 's|cp "${BR2_EXTERNAL_HA\(SS\)\{0,1\}OS_PATH}/ota/dev-ca.pem" "${TARGET_DIR}/etc/rauc/keyring.pem"|openssl x509 -in /build/cert.pem -text > "${TARGET_DIR}/etc/rauc/keyring.pem"  # GPU_AI: keyring = your CA only|' \
+		-e 's|cp "${BR2_EXTERNAL_HA\(SS\)\{0,1\}OS_PATH}/ota/rel-ca.pem" "${TARGET_DIR}/etc/rauc/keyring.pem"|openssl x509 -in /build/cert.pem -text > "${TARGET_DIR}/etc/rauc/keyring.pem"  # GPU_AI: keyring = your CA only|' \
 		"$RAUC_SH"
 	echo ">>> E: keyring hardened to YOUR CA only (strict decoupling)"
 fi

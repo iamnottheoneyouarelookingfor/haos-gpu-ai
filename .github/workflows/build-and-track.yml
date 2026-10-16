@@ -22,13 +22,18 @@ permissions:
 
 env:
   UPSTREAM_REPO: home-assistant/operating-system
-  # Only AUTO-build tags on this upstream line. A major bump (17.x -> 18.x)
-  # changes the kernel (6.12.85 -> 6.18.37), which invalidates the NVIDIA
-  # driver pairing and every version-sensitive patch (GSP path, rauc.sh call
-  # sites, create-data-partition, daemon.json). That must be a deliberate,
-  # re-validated bump run manually with force_tag - never an unattended cron
-  # build. Set to "" to track any release.
-  TRACK_LINE: "17."
+  # Only AUTO-build tags on this upstream line. A major bump changes the kernel
+  # and invalidates the NVIDIA driver pairing and the version-sensitive patches
+  # (GSP path, rauc.sh call sites, create-data-partition, daemon.json), so it
+  # must be a deliberate, re-validated bump run manually with force_tag - never
+  # an unattended cron build. Set to "" to track any release.
+  #
+  # Now tracking the 18.x line (kernel 6.18.52, HAOS 18.3). The 17.x -> 18.x bump
+  # was validated: HAOS renamed hassos_* -> haos_* (the rauc compatible function,
+  # BR2_EXTERNAL_*_PATH, and the data/supervisor units) - build.sh and the
+  # seed-local-addons unit now match both names. Driver 595.84 still covers the
+  # 6.18 kernel. The next guarded boundary is 18.x -> 19.x.
+  TRACK_LINE: "18."
   # Pin the HAOS builder image, OR leave blank to build it from the submodule's
   # own Dockerfile (guaranteed to match the pinned Buildroot toolchain).
   # Confirm the current published tag from the upstream repo's CI if you pin.
