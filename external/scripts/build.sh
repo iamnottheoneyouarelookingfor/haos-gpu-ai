@@ -98,9 +98,19 @@ done
 #     pair every run (that cert also becomes the baked /etc/rauc/keyring.pem).
 #     Stage the user's CA there so the bundle signature AND the on-device
 #     keyring are yours - stock (HA-signed) bundles then fail verification too.
+#
+#     Use -s (exists AND non-empty), not -f: the CI "Write RAUC signing material"
+#     step ALWAYS writes cert.pem/key.pem, writing EMPTY files when the
+#     RAUC_SIGNING_CERT/KEY secrets are unset. On 18.x, staging an empty cert is
+#     fatal: HAOS's prepare_rauc_signing only self-signs when /build/key.pem is
+#     MISSING (not empty), so an empty key skips the self-sign and a later
+#     `openssl x509 -in /build/cert.pem` aborts target-finalize
+#     ("Could not find certificate from /build/cert.pem"). Treating empty as
+#     absent lets HAOS self-sign a throwaway and the build completes (with the
+#     loud warning below) - matching the documented "no secrets -> throwaway".
 GPU_AI_CA_STAGED=0
 for d in "${ROOT}/pki" "${ROOT}"; do
-	if [ -f "${d}/cert.pem" ] && [ -f "${d}/key.pem" ]; then
+	if [ -s "${d}/cert.pem" ] && [ -s "${d}/key.pem" ]; then
 		mkdir -p /build 2>/dev/null || true
 		cp "${d}/cert.pem" /build/cert.pem
 		cp "${d}/key.pem"  /build/key.pem
@@ -116,8 +126,11 @@ done
 #     still blocks stock updates, so this is belt-and-suspenders). For a hard
 #     lock, rewrite rauc.sh's keyring copy to emit YOUR cert as the sole trust
 #     anchor. To keep HAOS's default behaviour instead, delete this block.
+# Only harden when a REAL CA was staged. Without one (self-signed throwaway),
+# leave HAOS's default dev keyring so a validation build still completes and we
+# don't bake a throwaway cert as the sole on-device trust anchor.
 RAUC_SH="${UPSTREAM}/buildroot-external/scripts/rauc.sh"
-if [ -f "$RAUC_SH" ] && ! grep -q 'GPU_AI: keyring = your CA only' "$RAUC_SH"; then
+if [ "${GPU_AI_CA_STAGED}" -eq 1 ] && [ -f "$RAUC_SH" ] && ! grep -q 'GPU_AI: keyring = your CA only' "$RAUC_SH"; then
 	# HAOS 18.x renamed BR2_EXTERNAL_HASSOS_PATH -> BR2_EXTERNAL_HAOS_PATH; the
 	# optional \(SS\)\{0,1\} matches the dev-/rel-ca cp line on both 17.x and 18.x.
 	sed -i \

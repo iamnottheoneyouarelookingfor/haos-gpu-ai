@@ -99,21 +99,37 @@ re-validated major bump." What the re-validation found and what was done:
   `docker` as a **no-op for that one script** (run/exec/trap/teardown all harmless;
   mkfs, mount, containerd marker, AppArmor, channel, umount still run). Robust
   across 17.x/18.x.
+- **RAUC signing requires real secrets on 18.x (empty is fatal).** Third CI build
+  (run 38866652727, with the create-data-partition fix) reached `target-finalize`
+  and died in upstream `post-build.sh` → `install_rauc_certs`:
+  `Could not find certificate from /build/cert.pem`. Cause: the
+  `RAUC_SIGNING_CERT`/`KEY` Actions secrets are **unset/empty**; the CI step still
+  writes empty `cert.pem`/`key.pem`, `build.sh` staged them (its check was `-f`),
+  and 18.x's `prepare_rauc_signing` only self-signs when `/build/key.pem` is
+  *missing* (not empty) — so it skipped self-sign and `openssl x509` aborted on the
+  empty cert. (17.x degraded quietly; 18.x hard-fails.) Fix: `build.sh` now stages
+  the CA only when the files are **non-empty** (`-s`), so empty secrets fall back
+  to HAOS self-signing and the build completes; and the strict keyring-harden only
+  runs when a real CA is staged. **A publishable, flashable 18.3 image still needs
+  the real RAUC secrets set** (`generate-ca.sh ./pki` → `gh secret set …`).
 - **Submodule** `upstream` gitlink bumped to 18.3 (`0502381a`); `TRACK_LINE` → `18.`.
 - **Driver:** 595.84 is kept — it covers the 6.18 line (preflight matrix ceiling 6.20).
 
-**Validated by CI run 38850285368 (reached hassio image-assembly before the
-create-data-partition bug):**
+**Validated by CI (runs 38850285368 + 38866652727):**
 1. ✅ **Kernel 6.18.52 + 595.84 `.run` reachability** — preflight passed (0 failures)
    and the build fetched + compiled the kernel.
 2. ✅ **595.84 open-module compile against 6.18.52** — Buildroot builds every target
-   package (incl. `haos-compute-nvidia`) before image assembly, which is where the
-   build reached. The biggest risk of the bump is cleared.
+   package (incl. `haos-compute-nvidia`) before image assembly. The biggest risk
+   of the bump is cleared.
+3. ✅ **Image assembly through `target-finalize`** — create-data-partition, rootfs
+   overlay, and our post-build all ran; only the RAUC cert step (empty secrets)
+   stopped it.
 
 **Still NOT verified (must pass before trusting):**
-3. **Image assembly completes → `.raucb` + `.img.xz`** — pending a re-run with the
-   create-data-partition fix.
-4. **Boot + gemma inference on the flashed 18.3 image** — the real end-to-end proof.
+4. **Signed `.raucb` + `.img.xz` published** — needs the RAUC secrets set (real CA),
+   then a green re-run. (A secret-less run now self-signs a throwaway and completes
+   but is NOT flashable for OTA.)
+5. **Boot + gemma inference on the flashed 18.3 image** — the real end-to-end proof.
 
 Converge `intel-amd` → `nvidia-amd` → `all`. Until a green build + flash, the
 running device stays 17.3 and this section stays "not verified."
