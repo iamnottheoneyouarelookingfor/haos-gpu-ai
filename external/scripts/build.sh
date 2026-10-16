@@ -48,19 +48,28 @@ if [ -f "$HDD_IMAGE_SH" ] && grep -q '^SYSTEM_SIZE=256M$' "$HDD_IMAGE_SH"; then
 	echo ">>> bumped system partition SYSTEM_SIZE 256M -> 512M (fits GPU rootfs)"
 fi
 
-# --- skip docker-in-docker image preload (builder has no docker daemon) -------
-# HAOS's create-data-partition.sh uses docker-in-docker to PRELOAD Supervisor
-# images into the data partition at build time. Our builder has no docker daemon
-# (docker-ce was stripped; it couldn't reach download.docker.com), so those lines
-# fail "docker: command not found". The preload is an OPTIMISATION, not required:
-# a network-connected HAOS pulls Core + Supervisor on first boot (hardware-proven).
-# Comment the whole `container=$(docker run ...)` .. `docker exec` block via a
-# ROBUST line-range match, preserving the containerd-snapshotter marker and the
-# AppArmor setup that follow. Idempotent; submodule commit stays clean.
+# --- skip docker-in-docker image preload -------------------------------------
+# HAOS's create-data-partition.sh PRELOADS Supervisor images into the data
+# partition via a docker-in-docker container. That dind preload is unreliable in
+# our builder and is only an OPTIMISATION: a network-connected HAOS pulls Core +
+# Supervisor on first boot (hardware-proven), so we skip it.
+#
+# The 17.x patch commented the `container=$(docker run ...)` .. `docker exec`
+# block by line range. HAOS 18.x restructured this script (see 18.3): besides
+# that block it adds `trap 'docker rm -f ${container} ...' ERR EXIT` (top) and an
+# explicit `docker rm -f "${container}"` teardown (bottom). With the run line
+# commented, ${container} is empty and those teardown calls abort the build
+# ("container name cannot be empty" / "docker rm requires at least 1 argument").
+#
+# So instead of a fragile line-range comment, define `docker` as a no-op for this
+# ONE script: the run, exec, trap teardown and explicit teardown all become
+# harmless, while the real data-partition work (mkfs, mount, the
+# containerd-snapshotter marker, AppArmor, updater channel, umount) still runs.
+# Robust across the 17.x/18.x layouts. Idempotent; submodule commit stays clean.
 CDP_SH="${UPSTREAM}/buildroot-external/package/hassio/create-data-partition.sh"
 if [ -f "$CDP_SH" ] && ! grep -q '#GPU_AI-SKIP' "$CDP_SH"; then
-	sed -i '/^container=$(docker run/,/^docker exec "${container}"/ s/^/#GPU_AI-SKIP /' "$CDP_SH"
-	echo ">>> GPU_AI: patched create-data-partition.sh (skipped docker preload block)"
+	sed -i '1a docker() { :; }  #GPU_AI-SKIP: neutralise dind image-preload (images pull on first boot)' "$CDP_SH"
+	echo ">>> GPU_AI: patched create-data-partition.sh (neutralised dind preload via docker no-op)"
 fi
 
 "${EXT}/scripts/merge-defconfig.sh" "$PROFILE"

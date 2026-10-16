@@ -83,24 +83,37 @@ re-validated major bump." What the re-validation found and what was done:
   - `build.sh` keyring patch: `BR2_EXTERNAL_HASSOS_PATH` → also `BR2_EXTERNAL_HAOS_PATH`.
   - `seed-local-addons.service`: ordered after/before `hassos-*` → also `haos-data`
     / `haos-supervisor` units.
-- **Unchanged anchors (still match at 18.3):** `SYSTEM_SIZE=256M` in `hdd-image.sh`
-  (still bumped to 512M), and the `create-data-partition.sh` docker-preload block.
+- **Unchanged anchor:** `SYSTEM_SIZE=256M` in `hdd-image.sh` (still bumped to 512M).
 - **18.x Buildroot is stricter:** `BR2_GLOBAL_PATCH_DIR` pointing at a *missing*
   dir is now a hard error (`pkg-generic.mk: contains nonexistent directory`),
   where 17.x tolerated it. `external/patches/` (referenced by `merge-defconfig.sh`)
   was never created — now committed (empty, with a README). First 18.3 CI build
-  (run 38849780169) died here; the hassos→haos patches, preflight, SYSTEM_SIZE
-  bump, and RAUC signing all succeeded before it.
+  (run 38849780169) died here.
+- **`create-data-partition.sh` dind-preload skip rewritten.** 18.x restructured
+  this script: besides the `container=$(docker run …)` + `docker exec` preload it
+  adds a `trap 'docker rm -f ${container} …' ERR EXIT` and an explicit
+  `docker rm -f "${container}"` teardown. The old 17.x line-range comment left
+  those teardown calls running with an empty `${container}`, aborting the build
+  ("container name cannot be empty" / "docker rm requires at least 1 argument").
+  Second 18.3 CI build (run 38850285368) died here. Fix: `build.sh` now defines
+  `docker` as a **no-op for that one script** (run/exec/trap/teardown all harmless;
+  mkfs, mount, containerd marker, AppArmor, channel, umount still run). Robust
+  across 17.x/18.x.
 - **Submodule** `upstream` gitlink bumped to 18.3 (`0502381a`); `TRACK_LINE` → `18.`.
 - **Driver:** 595.84 is kept — it covers the 6.18 line (preflight matrix ceiling 6.20).
 
-**NOT verified from here (must pass before trusting):**
-1. **Kernel 6.18.52 + 595.84 `.run` reachability** — this session's proxy 403-blocks
-   kernel.org and nvidia.com, so run `preflight-check.sh` in CI/on the build box.
-   (The old "18.1 404" note was about kernel 6.18.37; 18.3 uses 6.18.52.)
-2. **595.84 open-module compile against 6.18.52** — the single biggest risk of the
-   bump; proven only by a green `nvidia-amd` build, not by the matrix heuristic.
-3. **Boot + gemma inference on the flashed 18.3 image** — the real end-to-end proof.
+**Validated by CI run 38850285368 (reached hassio image-assembly before the
+create-data-partition bug):**
+1. ✅ **Kernel 6.18.52 + 595.84 `.run` reachability** — preflight passed (0 failures)
+   and the build fetched + compiled the kernel.
+2. ✅ **595.84 open-module compile against 6.18.52** — Buildroot builds every target
+   package (incl. `haos-compute-nvidia`) before image assembly, which is where the
+   build reached. The biggest risk of the bump is cleared.
+
+**Still NOT verified (must pass before trusting):**
+3. **Image assembly completes → `.raucb` + `.img.xz`** — pending a re-run with the
+   create-data-partition fix.
+4. **Boot + gemma inference on the flashed 18.3 image** — the real end-to-end proof.
 
 Converge `intel-amd` → `nvidia-amd` → `all`. Until a green build + flash, the
 running device stays 17.3 and this section stays "not verified."
