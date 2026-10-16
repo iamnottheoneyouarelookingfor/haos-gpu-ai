@@ -85,6 +85,12 @@ re-validated major bump." What the re-validation found and what was done:
     / `haos-supervisor` units.
 - **Unchanged anchors (still match at 18.3):** `SYSTEM_SIZE=256M` in `hdd-image.sh`
   (still bumped to 512M), and the `create-data-partition.sh` docker-preload block.
+- **18.x Buildroot is stricter:** `BR2_GLOBAL_PATCH_DIR` pointing at a *missing*
+  dir is now a hard error (`pkg-generic.mk: contains nonexistent directory`),
+  where 17.x tolerated it. `external/patches/` (referenced by `merge-defconfig.sh`)
+  was never created — now committed (empty, with a README). First 18.3 CI build
+  (run 38849780169) died here; the hassos→haos patches, preflight, SYSTEM_SIZE
+  bump, and RAUC signing all succeeded before it.
 - **Submodule** `upstream` gitlink bumped to 18.3 (`0502381a`); `TRACK_LINE` → `18.`.
 - **Driver:** 595.84 is kept — it covers the 6.18 line (preflight matrix ceiling 6.20).
 
