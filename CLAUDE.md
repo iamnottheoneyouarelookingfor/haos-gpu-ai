@@ -65,10 +65,11 @@ Device-verified anchor paths used by the gates/rebuild:
 | Kernel | **6.12.85** (pinned to 17.3). **18.1 / kernel 6.18.37 currently 404s on the kernel.org CDN** — do not try to auto-build 18.1 until that clears |
 | GPU host stack | NVIDIA **595.84** open modules, GSP firmware, autodetect, baked `default-runtime: nvidia`, toolkit **1.19** host-ldconfig injection — all validated live |
 | Add-on in container | 4090 = CUDA compute 8.9, 23.5 GiB; flash attention on; `q8_0` KV cache; 31/31 layers offloaded |
+| PTX-JIT | **restore validated live (2026-10-16)**: the `cuda_v13` runner completes gemma inference at ~93 tok/s, `POST /v1/chat/completions → 200`, **no `CUDA error 221`** — the handoff's remaining OS task is closed |
 
 ---
 
-## PTX-JIT decision record (STATUS: already applied in this tree)
+## PTX-JIT decision record (STATUS: applied in tree + validated live 2026-10-16)
 
 **Decision (2026-07-09, approved): keep `libnvidia-ptxjitcompiler` installed.
 Do not trim it again.**
@@ -90,6 +91,12 @@ Do not trim it again.**
   `nvvm`/`gpucomp`/`allocator`, each glob-guarded so a missing name can't break
   the build), and `SYSTEM_SIZE=512M` in `build.sh`. If a *different* checkout
   shows `grep -c ptxjitcompiler …mk` = 0, it predates this fix — re-apply.
+- **Validated live (2026-10-16):** the Ollama GPU-AI Universal add-on log shows
+  the 4090 bound as `library=CUDA compute=8.9 … libdirs=ollama,cuda_v13
+  driver=13.2`, and a full chat completion ran to `200` at ~93 tok/s with slots
+  returning idle — i.e. the `cuda_v13` runner that used to throw error 221 now
+  completes. Diagnosis confirmed, falsifier not triggered; this decision is
+  closed, not open.
 - **Falsifier:** if gate V1 shows `ptxjitcompiler` already present on a
   *running* image that still crashes, the diagnosis is wrong — stop and reopen.
 
