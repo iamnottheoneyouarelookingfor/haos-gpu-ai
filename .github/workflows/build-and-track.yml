@@ -174,9 +174,9 @@ jobs:
           if [ -n "${BUILDER_IMAGE}" ]; then
             echo "image=${BUILDER_IMAGE}" >> "$GITHUB_OUTPUT"
           else
-            # Build the HAOS builder from the submodule's Dockerfile, with two
-            # transforms that only bite on OLD release tags; current trixie-based
-            # tags pass through untouched.
+            # Build the HAOS builder from the submodule's Dockerfile, with three
+            # transforms. (1) is always applied; (2)+(3) are injected as a single
+            # RUN right after FROM, before the `# Build tools` apt-get.
             #
             #  (1) STRIP the `# Docker` block. It installs docker-ce (+ apt deps
             #      software-properties-common -> python-apt) purely for a dind image
@@ -184,28 +184,38 @@ jobs:
             #      its aging pool 404s on the pinned python-apt, killing `docker build`
             #      before the toolchain layer. We never need docker in the builder.
             #
-            #  (2) If the base is debian:bullseye, REPOINT apt at archive.debian.org.
-            #      bullseye is EOL: deb.debian.org still serves the base `main` index
-            #      but the security pool (debian-security/pool/updates/...) is pruned,
-            #      so the `# Build tools` apt-get 404s on libxml2/qemu-utils/sudo/vim/
-            #      python3-pil/... archive.debian.org carries EOL bullseye + its final
-            #      security pool; its Release files are expired, so also turn off
-            #      Check-Valid-Until. Injected as a RUN right after FROM, before any
-            #      apt-get. Idempotent (re-derived from the pristine submodule each run).
+            #  (2) RESTORE ca-certificates + curl. The `# Docker` block was ALSO the
+            #      only place these two get installed, and the BUILD needs them: HAOS/
+            #      buildroot fetch the kernel, the NVIDIA .run and the toolkit over
+            #      HTTPS (needs CA roots), and preflight-check.sh probes reachability
+            #      with curl. Without them build.sh's preflight reports the NVIDIA .run
+            #      "NOT reachable" and aborts (and real HTTPS downloads would fail too).
+            #      Applied for every debian base, 17.x and 18.x alike.
+            #
+            #  (3) If the base is debian:bullseye, REPOINT apt at archive.debian.org
+            #      FIRST (so (2) and the `# Build tools` apt-get resolve). bullseye is
+            #      EOL: deb.debian.org still serves the base `main` index but the
+            #      security pool (debian-security/pool/updates/...) is pruned, 404ing
+            #      libxml2/qemu-utils/sudo/vim/python3-pil/... archive.debian.org carries
+            #      EOL bullseye + its final security pool; its Release files are expired,
+            #      so also turn off Check-Valid-Until. Idempotent (re-derived each run).
             echo "Building HAOS builder from submodule Dockerfile (docker-ce block stripped)"
             awk '/^# Docker$/{skip=1; next} skip && /^# Build tools$/{skip=0} !skip' \
               upstream/Dockerfile > upstream/Dockerfile.nodind
+            # Single-quoted so the inner sed/printf quoting stays literal; spliced via a
+            # file (not awk -v, which would eat the \. \" \n escapes).
             if grep -qE '^FROM[[:space:]]+debian:bullseye' upstream/Dockerfile.nodind; then
-              echo "bullseye base detected -> pinning apt to archive.debian.org (EOL)"
-              # Single-quoted so the sed/printf quoting inside the RUN is literal; spliced
-              # via a file (not awk -v, which would eat the \. \" \n escapes).
-              FIX='RUN sed -i -E "s#https?://(deb|security)\.debian\.org/debian-security#http://archive.debian.org/debian-security#g; s#https?://(deb|security)\.debian\.org/debian#http://archive.debian.org/debian#g; /bullseye-updates/d" /etc/apt/sources.list && printf "Acquire::Check-Valid-Until \"false\";\nAcquire::Retries \"3\";\n" > /etc/apt/apt.conf.d/99archive'
-              printf '%s\n' "$FIX" > "${RUNNER_TEMP:-/tmp}/aptfix.line"
-              awk 'NR==FNR{fix=fix $0 ORS; next} {print} /^FROM[[:space:]]+debian:bullseye/ && !d{printf "%s", fix; d=1}' \
-                "${RUNNER_TEMP:-/tmp}/aptfix.line" upstream/Dockerfile.nodind > upstream/Dockerfile.nodind.new
-              mv upstream/Dockerfile.nodind.new upstream/Dockerfile.nodind
-              echo "--- effective builder Dockerfile (head) ---"; sed -n '1,8p' upstream/Dockerfile.nodind
+              echo "bullseye base -> archive.debian.org + restore ca-certificates/curl"
+              FIX='RUN sed -i -E "s#https?://(deb|security)\.debian\.org/debian-security#http://archive.debian.org/debian-security#g; s#https?://(deb|security)\.debian\.org/debian#http://archive.debian.org/debian#g; /bullseye-updates/d" /etc/apt/sources.list && printf "Acquire::Check-Valid-Until \"false\";\nAcquire::Retries \"3\";\n" > /etc/apt/apt.conf.d/99archive && apt-get update && apt-get install -y --no-install-recommends ca-certificates curl'
+            else
+              echo "non-bullseye base -> restore ca-certificates/curl"
+              FIX='RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl'
             fi
+            printf '%s\n' "$FIX" > "${RUNNER_TEMP:-/tmp}/aptfix.line"
+            awk 'NR==FNR{fix=fix $0 ORS; next} {print} /^FROM[[:space:]]+debian:/ && !d{printf "%s", fix; d=1}' \
+              "${RUNNER_TEMP:-/tmp}/aptfix.line" upstream/Dockerfile.nodind > upstream/Dockerfile.nodind.new
+            mv upstream/Dockerfile.nodind.new upstream/Dockerfile.nodind
+            echo "--- effective builder Dockerfile (head) ---"; sed -n '1,10p' upstream/Dockerfile.nodind
             docker build -t haos-gpu-builder:local -f upstream/Dockerfile.nodind upstream
             echo "image=haos-gpu-builder:local" >> "$GITHUB_OUTPUT"
           fi

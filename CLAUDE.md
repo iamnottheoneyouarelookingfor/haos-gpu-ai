@@ -356,6 +356,16 @@ Code is buildable on the 17.3 line as-is. To publish signed OTA releases:
    sets `Acquire::Check-Valid-Until "false"` (archive Release files are expired).
    Trixie-based (current) tags are detected out and untouched. If archive ever
    rots too, pin a published HAOS builder via the `BUILDER_IMAGE` env instead.
+   **Also (same step, ALL debian bases):** the stripped `# Docker` block was the
+   only place `ca-certificates` + `curl` got installed, and the build needs them
+   (HTTPS fetches of the kernel/NVIDIA `.run`/toolkit; `preflight-check.sh` probes
+   reachability with `curl`). Without them `build.sh`'s in-container preflight
+   reports the NVIDIA `.run` "NOT reachable" and aborts (run 39068752720,
+   2026-10-17 — first build to clear the builder image and reach `build.sh`). The
+   same injected RUN now re-adds both. This is a latent regression the nodind strip
+   introduced; 18.3's published release predates it (built pre-strip, run
+   39018751010 @ abe7124, full Dockerfile) and is unaffected, but any 18.x *rebuild*
+   on current `main` needs this fix too.
    NOTE: OTA is now **line-pinned** (2026-10-17) — `haos-gpu-updater.sh` filters
    `releases` to the device's own major line and installs only the newest
    non-prerelease release there, so 17.x and 18.x can coexist in one Releases
