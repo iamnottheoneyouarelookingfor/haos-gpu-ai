@@ -147,16 +147,24 @@ re-validated major bump." What the re-validation found and what was done:
 Converge `intel-amd` → `nvidia-amd` → `all`. Until a green build + flash, the
 running device stays 17.3; signature is now proven, boot is the last gate.
 
-> ⚠️ **OTA cross-line hazard (open).** This 18.3 release is the repo's only
-> release, so `releases/latest` = 18.3, and the on-device `haos-gpu-updater`
-> has no line pin: its up-to-date guard `[ "$tag" = "$running_ver" ]` can't
-> match (`running_ver` is `17.3-gpu-ai-universal`, tag is `18.3`) and the
-> `compatible` string is identical across lines, so a running 17.3 box WOULD
-> pull and `rauc install` 18.3 on its next daily timer. Now that the bundle is
-> signed by the same CA the 17.3 box trusts, the keyring no longer blocks it
-> either. Protect before relying on OTA: disable `haos-gpu-updater.timer` on the
-> box, or mark 18.3 `prerelease`, or (proper fix) make the updater filter
-> releases by the device's major version.
+> ⚠️ **OTA cross-line hazard — fixed in-tree 2026-10-17; running box NOT yet
+> protected.** Both lines share one GitHub Releases feed and an identical RAUC
+> `compatible` string, so the old `haos-gpu-updater` (query `releases/latest`,
+> guard `[ "$tag" = "$running_ver" ]`) would hand 18.x to a 17.x box: the guard
+> can't match (`running_ver` was the suffixed `17.3-gpu-ai-universal`, tag is
+> `18.3`) and the shared `compatible` string passes, and now that 18.3 is signed
+> by the same CA the 17.3 box trusts the keyring no longer blocks it either.
+> **Fix (committed):** `haos-gpu-updater.sh` is now **line-pinned** — it derives
+> the device major line from the bare os-release version (`17.3-gpu-ai-universal`
+> → `17.3` → `17`), lists `releases` instead of `releases/latest`, and installs
+> only the newest non-draft/non-prerelease release **on that same major line**
+> (and compares the bare version, fixing the self-redownload). A 17.x box with
+> only an 18.x release published now simply skips.
+> **CAVEAT:** this lives in the rootfs, so a box only gets it once it is FLASHED
+> with an image built from this tree. **Sam's currently-running 17.3 box still
+> carries the OLD updater** and is still exposed until it is reflashed — so until
+> then protect it directly: `systemctl disable --now haos-gpu-updater.timer` on
+> the box, or keep 18.3 marked `prerelease`.
 
 ---
 
@@ -348,6 +356,9 @@ Code is buildable on the 17.3 line as-is. To publish signed OTA releases:
    sets `Acquire::Check-Valid-Until "false"` (archive Release files are expired).
    Trixie-based (current) tags are detected out and untouched. If archive ever
    rots too, pin a published HAOS builder via the `BUILDER_IMAGE` env instead.
-   NOTE: OTA is single-channel — the on-device updater pulls `releases/latest`
-   regardless of line, so publishing both 17.x and 18.x needs line-pinned OTA
-   (updater filters by the device's major version) before both can coexist.
+   NOTE: OTA is now **line-pinned** (2026-10-17) — `haos-gpu-updater.sh` filters
+   `releases` to the device's own major line and installs only the newest
+   non-prerelease release there, so 17.x and 18.x can coexist in one Releases
+   feed without a box jumping lines. This takes effect per box only once it is
+   flashed with an image carrying the updated script; a box still running an
+   older image uses its baked-in (pre-pin) updater.
