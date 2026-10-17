@@ -62,7 +62,7 @@ Device-verified anchor paths used by the gates/rebuild:
 | Area | State |
 |------|-------|
 | Running image | **HAOS 17.3-gpu-ai-universal**, Core 2026.7.1, on the 4090 PC — version-suffix decoupling working |
-| Kernel | Running: **6.12.85** (HAOS 17.3). Repo now **targets HAOS 18.3 / kernel 6.18.52** (`TRACK_LINE` bumped to `18.`); applied in-tree but **not yet built or flashed** — see "18.x bump status" below |
+| Kernel | Running: **6.12.85** (HAOS 17.3). Repo **targets HAOS 18.3 / kernel 6.18.52** (`TRACK_LINE`=`18.`); **built green — 18.3 Release published** (run 39005255151), **not yet flashed** (and bundle-signature provenance unverified) — see "18.x bump status" |
 | GPU host stack | NVIDIA **595.84** open modules, GSP firmware, autodetect, baked `default-runtime: nvidia`, toolkit **1.19** host-ldconfig injection — all validated live |
 | Add-on in container | 4090 = CUDA compute 8.9, 23.5 GiB; flash attention on; `q8_0` KV cache; 31/31 layers offloaded |
 | PTX-JIT | **restore validated live (2026-10-16)**: the `cuda_v13` runner completes gemma inference at ~93 tok/s, `POST /v1/chat/completions → 200`, **no `CUDA error 221`** — the handoff's remaining OS task is closed |
@@ -115,21 +115,25 @@ re-validated major bump." What the re-validation found and what was done:
 - **Submodule** `upstream` gitlink bumped to 18.3 (`0502381a`); `TRACK_LINE` → `18.`.
 - **Driver:** 595.84 is kept — it covers the 6.18 line (preflight matrix ceiling 6.20).
 
-**Validated by CI (runs 38850285368 + 38866652727):**
-1. ✅ **Kernel 6.18.52 + 595.84 `.run` reachability** — preflight passed (0 failures)
-   and the build fetched + compiled the kernel.
-2. ✅ **595.84 open-module compile against 6.18.52** — Buildroot builds every target
-   package (incl. `haos-compute-nvidia`) before image assembly. The biggest risk
-   of the bump is cleared.
-3. ✅ **Image assembly through `target-finalize`** — create-data-partition, rootfs
-   overlay, and our post-build all ran; only the RAUC cert step (empty secrets)
-   stopped it.
+**Validated green end-to-end by CI run 39005255151 (2026-10-17, `nvidia-amd`):**
+1. ✅ **Kernel 6.18.52 + 595.84 `.run` reachability** — preflight passed (0 failures),
+   build fetched + compiled the kernel.
+2. ✅ **595.84 open-module compile against 6.18.52** — the biggest risk; cleared.
+3. ✅ **Image assembly + GPU-artifact verify** — the "Verify GPU artifacts" step
+   (greps the rootfs for nvidia/amdgpu/i915 `.ko`) passed.
+4. ✅ **Build published a Release tagged `18.3`** — `haos_generic-x86-64-18.3.img.xz`
+   (~420 MB), `.raucb` (~448 MB), `version-gpu-ai.json`. The whole pipeline works
+   on 6.18.52.
 
 **Still NOT verified (must pass before trusting):**
-4. **Signed `.raucb` + `.img.xz` published** — needs the RAUC secrets set (real CA),
-   then a green re-run. (A secret-less run now self-signs a throwaway and completes
-   but is NOT flashable for OTA.)
-5. **Boot + gemma inference on the flashed 18.3 image** — the real end-to-end proof.
+5. **Bundle signature = Sam's CA (not a throwaway).** Run 39005255151 was the
+   Option-B validation run; whether the `.raucb` is signed with the real CA or a
+   self-signed throwaway is **unverifiable from CI** (can't read secrets or the
+   bundle sig). Check with `rauc info haos_generic-x86-64-18.3.raucb` (signer =
+   your CA?) OR confirm the RAUC secrets were set to the CA your 17.3 box trusts.
+   If throwaway → re-run with real secrets before OTA. (A fresh `dd` of the
+   `.img.xz` also bakes whatever cert signed this build as the device keyring.)
+6. **Boot + gemma inference on the flashed 18.3 image** — the real end-to-end proof.
 
 Converge `intel-amd` → `nvidia-amd` → `all`. Until a green build + flash, the
 running device stays 17.3 and this section stays "not verified."
