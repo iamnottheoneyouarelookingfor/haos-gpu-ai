@@ -311,3 +311,16 @@ Code is buildable on the 17.3 line as-is. To publish signed OTA releases:
 4. **Now tracking the 18.x line** (`TRACK_LINE="18."`, target 18.3 / kernel
    6.18.52). First 18.3 build should be a manual `force_tag=18.3`, profile
    `nvidia-amd` first, then `all`. The next guarded boundary is 18.x → 19.x.
+5. **Building an older line on demand (e.g. 17.3, the proven-stable one).** A
+   manual `force_tag=17.3` bypasses the `TRACK_LINE` guard, and every build-time
+   patch matches both the 17.x (`hassos_*`) and 18.x (`haos_*`) layouts, so the
+   overlay is fine (17.3 preflight passes: kernel 6.12.85, 595.84). The catch is
+   the **builder image**: 17.x's `upstream/Dockerfile` is `FROM debian:bullseye`,
+   whose aging apt pool 404s on the `docker-ce` block's deps (python-apt). The
+   "Determine builder image" step now **strips that `# Docker` block** (nodind —
+   the builder never needs docker; `build.sh` no-ops the only dind use), so old
+   tags build. If bullseye's *build-tools* apt block also rots later, pin a
+   published HAOS builder via the `BUILDER_IMAGE` env instead of building it.
+   NOTE: OTA is single-channel — the on-device updater pulls `releases/latest`
+   regardless of line, so publishing both 17.x and 18.x needs line-pinned OTA
+   (updater filters by the device's major version) before both can coexist.

@@ -174,8 +174,19 @@ jobs:
           if [ -n "${BUILDER_IMAGE}" ]; then
             echo "image=${BUILDER_IMAGE}" >> "$GITHUB_OUTPUT"
           else
-            echo "Building HAOS builder from the submodule's Dockerfile"
-            docker build -t haos-gpu-builder:local ./upstream
+            # Build the HAOS builder from the submodule's Dockerfile, but STRIP its
+            # `# Docker` block first. That block installs docker-ce (+ its apt deps
+            # software-properties-common -> python-apt) purely for a docker-in-docker
+            # image preload that build.sh already no-ops. We never need it, and on
+            # older release branches it hard-fails: 17.x's builder is FROM
+            # debian:bullseye, whose aging security pool 404s on the pinned
+            # python-apt (e.g. 2.2.1.1), killing `docker build` before the toolchain
+            # layer. Dropping the block (same as the documented Dockerfile.nodind)
+            # makes old-tag force-builds work and is harmless for current tags.
+            echo "Building HAOS builder from submodule Dockerfile (docker-ce block stripped)"
+            awk '/^# Docker$/{skip=1; next} skip && /^# Build tools$/{skip=0} !skip' \
+              upstream/Dockerfile > upstream/Dockerfile.nodind
+            docker build -t haos-gpu-builder:local -f upstream/Dockerfile.nodind upstream
             echo "image=haos-gpu-builder:local" >> "$GITHUB_OUTPUT"
           fi
 
