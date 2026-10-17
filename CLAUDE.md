@@ -125,18 +125,38 @@ re-validated major bump." What the re-validation found and what was done:
    (~420 MB), `.raucb` (~448 MB), `version-gpu-ai.json`. The whole pipeline works
    on 6.18.52.
 
-**Still NOT verified (must pass before trusting):**
-5. **Bundle signature = Sam's CA (not a throwaway).** Run 39005255151 was the
-   Option-B validation run; whether the `.raucb` is signed with the real CA or a
-   self-signed throwaway is **unverifiable from CI** (can't read secrets or the
-   bundle sig). Check with `rauc info haos_generic-x86-64-18.3.raucb` (signer =
-   your CA?) OR confirm the RAUC secrets were set to the CA your 17.3 box trusts.
-   If throwaway → re-run with real secrets before OTA. (A fresh `dd` of the
-   `.img.xz` also bakes whatever cert signed this build as the device keyring.)
-6. **Boot + gemma inference on the flashed 18.3 image** — the real end-to-end proof.
+5. ✅ **Bundle signature = Sam's CA (VALIDATED 2026-10-17).** The signed build —
+   CI run **39018751010** (`nvidia-amd`, real `RAUC_SIGNING_CERT`/`KEY` set to the
+   HAOS-GPU-AI Release CA) — published a green 18.3 release. The published
+   `.raucb` was downloaded and its CMS signature extracted and checked off-box:
+   - **Signer = your CA.** The CMS `SignerInfo` issuerAndSerialNumber is
+     `O=HAOS-GPU-AI, CN=HAOS-GPU-AI Release CA` serial
+     `0x1A2FDEC7905DC8C67354CCAAE7B388D2B1EE3C72` — byte-for-byte your cert
+     (sha256 `61:CD:8A:06:20:8A:6D:DD:…:1E:F7:AF`), not a throwaway.
+   - **Cryptographically verifies against your CA alone.**
+     `openssl cms -verify -CAfile <your-cert> …` → "CMS Verification successful";
+     the signed manifest reads `compatible=haos-generic-x86-64-gpu-ai`,
+     `version=18.3`, `format=verity`.
+   - **Note:** the CMS cert bag *also* carries HAOS's stock "Home Assistant OS
+     Provisioning CA Release" cert. It is NOT the signer and is NOT in any chain
+     to your keyring — HAOS always embeds it; benign. On-box, confirm with
+     `rauc info haos_generic-x86-64-18.3.raucb` (signer = your CA).
+6. **Boot + gemma inference on the flashed 18.3 image** — the only remaining proof;
+   it is Sam's on-hardware step (V3 → `rauc install` → reboot → gemma warmup).
 
 Converge `intel-amd` → `nvidia-amd` → `all`. Until a green build + flash, the
-running device stays 17.3 and this section stays "not verified."
+running device stays 17.3; signature is now proven, boot is the last gate.
+
+> ⚠️ **OTA cross-line hazard (open).** This 18.3 release is the repo's only
+> release, so `releases/latest` = 18.3, and the on-device `haos-gpu-updater`
+> has no line pin: its up-to-date guard `[ "$tag" = "$running_ver" ]` can't
+> match (`running_ver` is `17.3-gpu-ai-universal`, tag is `18.3`) and the
+> `compatible` string is identical across lines, so a running 17.3 box WOULD
+> pull and `rauc install` 18.3 on its next daily timer. Now that the bundle is
+> signed by the same CA the 17.3 box trusts, the keyring no longer blocks it
+> either. Protect before relying on OTA: disable `haos-gpu-updater.timer` on the
+> box, or mark 18.3 `prerelease`, or (proper fix) make the updater filter
+> releases by the device's major version.
 
 ---
 
