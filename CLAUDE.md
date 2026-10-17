@@ -339,8 +339,15 @@ Code is buildable on the 17.3 line as-is. To publish signed OTA releases:
    whose aging apt pool 404s on the `docker-ce` block's deps (python-apt). The
    "Determine builder image" step now **strips that `# Docker` block** (nodind —
    the builder never needs docker; `build.sh` no-ops the only dind use), so old
-   tags build. If bullseye's *build-tools* apt block also rots later, pin a
-   published HAOS builder via the `BUILDER_IMAGE` env instead of building it.
+   tags build. The bullseye *build-tools* apt block then rotted too (runs
+   39019376966 / 39019974733, 2026-10-17): the base `main` index still resolves
+   but the **security pool** (`debian-security/pool/updates/…`) 404s on the final
+   `deb11uN` builds of libxml2/qemu-utils/sudo/vim/python3-pil/… Fix (same step):
+   when the base is `debian:bullseye`, inject a RUN right after `FROM` that
+   repoints apt at **archive.debian.org** (base + its final security pool) and
+   sets `Acquire::Check-Valid-Until "false"` (archive Release files are expired).
+   Trixie-based (current) tags are detected out and untouched. If archive ever
+   rots too, pin a published HAOS builder via the `BUILDER_IMAGE` env instead.
    NOTE: OTA is single-channel — the on-device updater pulls `releases/latest`
    regardless of line, so publishing both 17.x and 18.x needs line-pinned OTA
    (updater filters by the device's major version) before both can coexist.

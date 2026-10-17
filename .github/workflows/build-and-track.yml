@@ -174,18 +174,38 @@ jobs:
           if [ -n "${BUILDER_IMAGE}" ]; then
             echo "image=${BUILDER_IMAGE}" >> "$GITHUB_OUTPUT"
           else
-            # Build the HAOS builder from the submodule's Dockerfile, but STRIP its
-            # `# Docker` block first. That block installs docker-ce (+ its apt deps
-            # software-properties-common -> python-apt) purely for a docker-in-docker
-            # image preload that build.sh already no-ops. We never need it, and on
-            # older release branches it hard-fails: 17.x's builder is FROM
-            # debian:bullseye, whose aging security pool 404s on the pinned
-            # python-apt (e.g. 2.2.1.1), killing `docker build` before the toolchain
-            # layer. Dropping the block (same as the documented Dockerfile.nodind)
-            # makes old-tag force-builds work and is harmless for current tags.
+            # Build the HAOS builder from the submodule's Dockerfile, with two
+            # transforms that only bite on OLD release tags; current trixie-based
+            # tags pass through untouched.
+            #
+            #  (1) STRIP the `# Docker` block. It installs docker-ce (+ apt deps
+            #      software-properties-common -> python-apt) purely for a dind image
+            #      preload that build.sh already no-ops. On 17.x (FROM debian:bullseye)
+            #      its aging pool 404s on the pinned python-apt, killing `docker build`
+            #      before the toolchain layer. We never need docker in the builder.
+            #
+            #  (2) If the base is debian:bullseye, REPOINT apt at archive.debian.org.
+            #      bullseye is EOL: deb.debian.org still serves the base `main` index
+            #      but the security pool (debian-security/pool/updates/...) is pruned,
+            #      so the `# Build tools` apt-get 404s on libxml2/qemu-utils/sudo/vim/
+            #      python3-pil/... archive.debian.org carries EOL bullseye + its final
+            #      security pool; its Release files are expired, so also turn off
+            #      Check-Valid-Until. Injected as a RUN right after FROM, before any
+            #      apt-get. Idempotent (re-derived from the pristine submodule each run).
             echo "Building HAOS builder from submodule Dockerfile (docker-ce block stripped)"
             awk '/^# Docker$/{skip=1; next} skip && /^# Build tools$/{skip=0} !skip' \
               upstream/Dockerfile > upstream/Dockerfile.nodind
+            if grep -qE '^FROM[[:space:]]+debian:bullseye' upstream/Dockerfile.nodind; then
+              echo "bullseye base detected -> pinning apt to archive.debian.org (EOL)"
+              # Single-quoted so the sed/printf quoting inside the RUN is literal; spliced
+              # via a file (not awk -v, which would eat the \. \" \n escapes).
+              FIX='RUN sed -i -E "s#https?://(deb|security)\.debian\.org/debian-security#http://archive.debian.org/debian-security#g; s#https?://(deb|security)\.debian\.org/debian#http://archive.debian.org/debian#g; /bullseye-updates/d" /etc/apt/sources.list && printf "Acquire::Check-Valid-Until \"false\";\nAcquire::Retries \"3\";\n" > /etc/apt/apt.conf.d/99archive'
+              printf '%s\n' "$FIX" > "${RUNNER_TEMP:-/tmp}/aptfix.line"
+              awk 'NR==FNR{fix=fix $0 ORS; next} {print} /^FROM[[:space:]]+debian:bullseye/ && !d{printf "%s", fix; d=1}' \
+                "${RUNNER_TEMP:-/tmp}/aptfix.line" upstream/Dockerfile.nodind > upstream/Dockerfile.nodind.new
+              mv upstream/Dockerfile.nodind.new upstream/Dockerfile.nodind
+              echo "--- effective builder Dockerfile (head) ---"; sed -n '1,8p' upstream/Dockerfile.nodind
+            fi
             docker build -t haos-gpu-builder:local -f upstream/Dockerfile.nodind upstream
             echo "image=haos-gpu-builder:local" >> "$GITHUB_OUTPUT"
           fi
