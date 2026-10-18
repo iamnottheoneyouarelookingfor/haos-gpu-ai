@@ -385,7 +385,9 @@ Code is buildable on the 17.3 line as-is. To publish signed OTA releases:
    FORCE_UNSAFE_CONFIGURE), the NVIDIA 595.84 open modules compiled against kernel
    6.12.85, and a **signed 17.3 Release published** (`haos_generic-x86-64-17.3.raucb`
    ~417 MB + `.img.xz` ~390 MB + `version-gpu-ai.json`). So BOTH lines now build on
-   demand. (That build was really the full tri-vendor `all` image: the dispatched
+   demand. The 17.3 `.raucb` signer was cryptographically verified (2026-10-18) =
+   your CA (serial `0x1A2FDEC7905DC8C67354CCAAE7B388D2B1EE3C72`; `openssl cms
+   -verify -CAfile <your-cert>` OK), same as the 18.3 bundle. (That build was really the full tri-vendor `all` image: the dispatched
    `profile=nvidia-amd` does NOT reach the build container — build.sh's preflight
    runs `profile=all` regardless. Known low-severity bug; `all` is the convergence
    target so it's benign, but it means ~2.9h builds and the `profile` input is a
