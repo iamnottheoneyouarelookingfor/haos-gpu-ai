@@ -102,7 +102,11 @@ fi
 TK_VER="$(sed -n 's/^[[:space:]]*default "\([0-9][0-9.]*\)".*/\1/p' \
 	"${EXT}/package/haos-nvidia-container-toolkit/Config.in" | head -n1)"
 if [ -n "$TK_VER" ]; then
-	TK_URL="https://github.com/NVIDIA/nvidia-container-toolkit/releases/download/v${TK_VER}/nvidia-container-toolkit_${TK_VER}_linux_amd64.tar.gz"
+	# Asset name must match what the package actually fetches
+	# (haos-nvidia-container-toolkit.mk): the amd64 tarball is the `_deb_amd64`
+	# one; there is NO plain `_linux_amd64` asset (NVIDIA ships per-packaging
+	# tarballs). Verified for v1.19.1: `_linux_amd64` 404s, `_deb_amd64` 200s.
+	TK_URL="https://github.com/NVIDIA/nvidia-container-toolkit/releases/download/v${TK_VER}/nvidia-container-toolkit_${TK_VER}_deb_amd64.tar.gz"
 	# Toolkit artifact naming has shifted between minors -> warn, don't hard-fail.
 	if head_ok "$TK_URL"; then ok "container toolkit asset reachable"; else
 		warn "toolkit asset NOT reachable (name/layout may differ for ${TK_VER}): ${TK_URL}"
