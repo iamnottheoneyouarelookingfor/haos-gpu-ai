@@ -125,18 +125,59 @@ re-validated major bump." What the re-validation found and what was done:
    (~420 MB), `.raucb` (~448 MB), `version-gpu-ai.json`. The whole pipeline works
    on 6.18.52.
 
-**Still NOT verified (must pass before trusting):**
-5. **Bundle signature = Sam's CA (not a throwaway).** Run 39005255151 was the
-   Option-B validation run; whether the `.raucb` is signed with the real CA or a
-   self-signed throwaway is **unverifiable from CI** (can't read secrets or the
-   bundle sig). Check with `rauc info haos_generic-x86-64-18.3.raucb` (signer =
-   your CA?) OR confirm the RAUC secrets were set to the CA your 17.3 box trusts.
-   If throwaway → re-run with real secrets before OTA. (A fresh `dd` of the
-   `.img.xz` also bakes whatever cert signed this build as the device keyring.)
-6. **Boot + gemma inference on the flashed 18.3 image** — the real end-to-end proof.
+5. ✅ **Bundle signature = Sam's CA (VALIDATED 2026-10-17).** The signed build —
+   CI run **39018751010** (`nvidia-amd`, real `RAUC_SIGNING_CERT`/`KEY` set to the
+   HAOS-GPU-AI Release CA) — published a green 18.3 release. The published
+   `.raucb` was downloaded and its CMS signature extracted and checked off-box:
+   - **Signer = your CA.** The CMS `SignerInfo` issuerAndSerialNumber is
+     `O=HAOS-GPU-AI, CN=HAOS-GPU-AI Release CA` serial
+     `0x1A2FDEC7905DC8C67354CCAAE7B388D2B1EE3C72` — byte-for-byte your cert
+     (sha256 `61:CD:8A:06:20:8A:6D:DD:…:1E:F7:AF`), not a throwaway.
+   - **Cryptographically verifies against your CA alone.**
+     `openssl cms -verify -CAfile <your-cert> …` → "CMS Verification successful";
+     the signed manifest reads `compatible=haos-generic-x86-64-gpu-ai`,
+     `version=18.3`, `format=verity`.
+   - **Note:** the CMS cert bag *also* carries HAOS's stock "Home Assistant OS
+     Provisioning CA Release" cert. It is NOT the signer and is NOT in any chain
+     to your keyring — HAOS always embeds it; benign. On-box, confirm with
+     `rauc info haos_generic-x86-64-18.3.raucb` (signer = your CA).
+6. **Boot + gemma inference on the flashed 18.3 image** — the only remaining proof;
+   it is Sam's on-hardware step (V3 → `rauc install` → reboot → gemma warmup).
 
 Converge `intel-amd` → `nvidia-amd` → `all`. Until a green build + flash, the
-running device stays 17.3 and this section stays "not verified."
+running device stays 17.3; signature is now proven, boot is the last gate.
+
+> ⚠️ **OTA cross-line hazard — fixed in-tree 2026-10-17; running box NOT yet
+> protected.** Both lines share one GitHub Releases feed and an identical RAUC
+> `compatible` string, so the old `haos-gpu-updater` (query `releases/latest`,
+> guard `[ "$tag" = "$running_ver" ]`) would hand 18.x to a 17.x box: the guard
+> can't match (`running_ver` was the suffixed `17.3-gpu-ai-universal`, tag is
+> `18.3`) and the shared `compatible` string passes, and now that 18.3 is signed
+> by the same CA the 17.3 box trusts the keyring no longer blocks it either.
+> **Fix (committed):** `haos-gpu-updater.sh` is now **line-pinned** — it derives
+> the device major line from the bare os-release version (`17.3-gpu-ai-universal`
+> → `17.3` → `17`), lists `releases` instead of `releases/latest`, and installs
+> only the newest non-draft/non-prerelease release **on that same major line**
+> (and compares the bare version, fixing the self-redownload). A 17.x box with
+> only an 18.x release published now simply skips.
+> **CAVEAT:** this lives in the rootfs, so a box only gets it once it is FLASHED
+> with an image built from this tree. **Sam's currently-running 17.3 box still
+> carries the OLD updater** and is still exposed until it is reflashed — so until
+> then protect it directly: `systemctl disable --now haos-gpu-updater.timer` on
+> the box, or keep 18.3 marked `prerelease`.
+>
+> **Update 2026-10-18 — a 17.3 release now exists, which changes the exposure.**
+> `releases/latest` is now **17.3** (published 00:21 UTC, newer than 18.3). The
+> old pre-pin updater's guard still can't match (`tag` `17.3` ≠ suffixed
+> `running_ver` `17.3-gpu-ai-universal`), so it does NOT see "up to date" — but
+> the newest release is now the SAME version the box runs, so the worst case is a
+> harmless same-version **re-stage of 17.3 to the inactive slot** (verified CA,
+> no auto-reboot — the updater only `rauc install`s and logs "reboot to
+> activate"), NOT the unverified cross-line 18.x jump. So publishing 17.3
+> incidentally shields the box from the 18.x jump. It still does a wasteful daily
+> 417 MB re-stage and would flip back to danger if an 18.x release ever becomes
+> `latest` again, so the real fixes stand: disable the timer, or reflash with the
+> line-pinned updater (then it compares the bare version and correctly no-ops).
 
 ---
 
@@ -319,8 +360,43 @@ Code is buildable on the 17.3 line as-is. To publish signed OTA releases:
    whose aging apt pool 404s on the `docker-ce` block's deps (python-apt). The
    "Determine builder image" step now **strips that `# Docker` block** (nodind —
    the builder never needs docker; `build.sh` no-ops the only dind use), so old
-   tags build. If bullseye's *build-tools* apt block also rots later, pin a
-   published HAOS builder via the `BUILDER_IMAGE` env instead of building it.
-   NOTE: OTA is single-channel — the on-device updater pulls `releases/latest`
-   regardless of line, so publishing both 17.x and 18.x needs line-pinned OTA
-   (updater filters by the device's major version) before both can coexist.
+   tags build. The bullseye *build-tools* apt block then rotted too (runs
+   39019376966 / 39019974733, 2026-10-17): the base `main` index still resolves
+   but the **security pool** (`debian-security/pool/updates/…`) 404s on the final
+   `deb11uN` builds of libxml2/qemu-utils/sudo/vim/python3-pil/… Fix (same step):
+   when the base is `debian:bullseye`, inject a RUN right after `FROM` that
+   repoints apt at **archive.debian.org** (base + its final security pool) and
+   sets `Acquire::Check-Valid-Until "false"` (archive Release files are expired).
+   Trixie-based (current) tags are detected out and untouched. If archive ever
+   rots too, pin a published HAOS builder via the `BUILDER_IMAGE` env instead.
+   **Also (same step, ALL debian bases):** the stripped `# Docker` block was the
+   only place `ca-certificates` + `curl` got installed, and the build needs them
+   (HTTPS fetches of the kernel/NVIDIA `.run`/toolkit; `preflight-check.sh` probes
+   reachability with `curl`). Without them `build.sh`'s in-container preflight
+   reports the NVIDIA `.run` "NOT reachable" and aborts (run 39068752720,
+   2026-10-17 — first build to clear the builder image and reach `build.sh`). The
+   same injected RUN now re-adds both. This is a latent regression the nodind strip
+   introduced; 18.3's published release predates it (built pre-strip, run
+   39018751010 @ abe7124, full Dockerfile) and is unaffected, but any 18.x *rebuild*
+   on current `main` needs this fix too.
+   **PROVEN 2026-10-18:** a forced `force_tag=17.3` build went fully green end to
+   end — CI run **39071204656** (started 21:30, finished 00:21 UTC, ~2h51m): all
+   four builder fixes held (archive.debian.org apt, ca-certs/curl restore,
+   FORCE_UNSAFE_CONFIGURE), the NVIDIA 595.84 open modules compiled against kernel
+   6.12.85, and a **signed 17.3 Release published** (`haos_generic-x86-64-17.3.raucb`
+   ~417 MB + `.img.xz` ~390 MB + `version-gpu-ai.json`). So BOTH lines now build on
+   demand. The 17.3 `.raucb` signer was cryptographically verified (2026-10-18) =
+   your CA (serial `0x1A2FDEC7905DC8C67354CCAAE7B388D2B1EE3C72`; `openssl cms
+   -verify -CAfile <your-cert>` OK), same as the 18.3 bundle. (That build was really the full tri-vendor `all` image: the dispatched
+   `profile=nvidia-amd` does NOT reach the build container — build.sh's preflight
+   runs `profile=all` regardless. Known low-severity bug; `all` is the convergence
+   target so it's benign, but it means ~2.9h builds and the `profile` input is a
+   no-op. Fix if smaller/scoped builds are wanted: make the `-e PROFILE` actually
+   reach build.sh, e.g. export it inside the `bash -c`, or check whether
+   `upstream/scripts/entry.sh` resets the env.)
+   NOTE: OTA is now **line-pinned** (2026-10-17) — `haos-gpu-updater.sh` filters
+   `releases` to the device's own major line and installs only the newest
+   non-prerelease release there, so 17.x and 18.x can coexist in one Releases
+   feed without a box jumping lines. This takes effect per box only once it is
+   flashed with an image carrying the updated script; a box still running an
+   older image uses its baked-in (pre-pin) updater.

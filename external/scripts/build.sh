@@ -15,6 +15,15 @@
 # =============================================================================
 set -euo pipefail
 
+# Buildroot builds some host autotools packages whose GNU configure (gnulib)
+# refuses to run as root unless this is set (e.g. 17.x's host-tar-1.35:
+# "you should not run configure as root (set FORCE_UNSAFE_CONFIGURE=1 ...)").
+# Our CI and the documented `docker run` rebuild both run build.sh as root in a
+# disposable builder container, so bypass the check. Harmless when not root, and
+# a no-op on 18.x (whose buildroot doesn't trip it). Buildroot forwards the var
+# to each package's configure environment.
+export FORCE_UNSAFE_CONFIGURE=1
+
 EXT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # external/
 ROOT="$(cd "$EXT/.." && pwd)"                            # repo root
 UPSTREAM="${ROOT}/upstream"
