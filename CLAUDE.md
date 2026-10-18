@@ -165,6 +165,19 @@ running device stays 17.3; signature is now proven, boot is the last gate.
 > carries the OLD updater** and is still exposed until it is reflashed — so until
 > then protect it directly: `systemctl disable --now haos-gpu-updater.timer` on
 > the box, or keep 18.3 marked `prerelease`.
+>
+> **Update 2026-10-18 — a 17.3 release now exists, which changes the exposure.**
+> `releases/latest` is now **17.3** (published 00:21 UTC, newer than 18.3). The
+> old pre-pin updater's guard still can't match (`tag` `17.3` ≠ suffixed
+> `running_ver` `17.3-gpu-ai-universal`), so it does NOT see "up to date" — but
+> the newest release is now the SAME version the box runs, so the worst case is a
+> harmless same-version **re-stage of 17.3 to the inactive slot** (verified CA,
+> no auto-reboot — the updater only `rauc install`s and logs "reboot to
+> activate"), NOT the unverified cross-line 18.x jump. So publishing 17.3
+> incidentally shields the box from the 18.x jump. It still does a wasteful daily
+> 417 MB re-stage and would flip back to danger if an 18.x release ever becomes
+> `latest` again, so the real fixes stand: disable the timer, or reflash with the
+> line-pinned updater (then it compares the bare version and correctly no-ops).
 
 ---
 
@@ -366,6 +379,19 @@ Code is buildable on the 17.3 line as-is. To publish signed OTA releases:
    introduced; 18.3's published release predates it (built pre-strip, run
    39018751010 @ abe7124, full Dockerfile) and is unaffected, but any 18.x *rebuild*
    on current `main` needs this fix too.
+   **PROVEN 2026-10-18:** a forced `force_tag=17.3` build went fully green end to
+   end — CI run **39071204656** (started 21:30, finished 00:21 UTC, ~2h51m): all
+   four builder fixes held (archive.debian.org apt, ca-certs/curl restore,
+   FORCE_UNSAFE_CONFIGURE), the NVIDIA 595.84 open modules compiled against kernel
+   6.12.85, and a **signed 17.3 Release published** (`haos_generic-x86-64-17.3.raucb`
+   ~417 MB + `.img.xz` ~390 MB + `version-gpu-ai.json`). So BOTH lines now build on
+   demand. (That build was really the full tri-vendor `all` image: the dispatched
+   `profile=nvidia-amd` does NOT reach the build container — build.sh's preflight
+   runs `profile=all` regardless. Known low-severity bug; `all` is the convergence
+   target so it's benign, but it means ~2.9h builds and the `profile` input is a
+   no-op. Fix if smaller/scoped builds are wanted: make the `-e PROFILE` actually
+   reach build.sh, e.g. export it inside the `bash -c`, or check whether
+   `upstream/scripts/entry.sh` resets the env.)
    NOTE: OTA is now **line-pinned** (2026-10-17) — `haos-gpu-updater.sh` filters
    `releases` to the device's own major line and installs only the newest
    non-prerelease release there, so 17.x and 18.x can coexist in one Releases
